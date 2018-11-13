@@ -9,6 +9,9 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+Although hypothesis tests provide a way to compare nested linear models, in many situations the approaches under consideration don’t fit nicely in this paradigm. Indeed, for many modern tools and in many applications, the emphasis lies on prediction accuracy rather than on statistical significance. In these cases, cross validation provides a way to compare the predictive performance of competing methods.
+
+
 ```{r}
 library(tidyverse)
 library(modelr)
@@ -64,7 +67,38 @@ rmse(nonlin_mod, test_df)
 rmse(wiggly_mod, test_df)
 ```
 
-```{r}
+Iterate!
 
+```{r}
+cv_df = 
+  crossv_mc(nonlin_df, 100) # 100 version for training and testing dataset
+cv_df %>% pull(train) %>% .[[1]] %>% as_tibble()
+
+#  fit my candidate models above and assess prediction accuracy as I did for the single training / testing split
+cv_df =
+  cv_df %>% 
+  mutate(train = map(train, as_tibble),
+         test = map(test, as_tibble))
+
+cv_df = 
+  cv_df %>% 
+  mutate(lin_mod    = map(train, ~lm(y ~ x, data = .x)),
+         nonlin_mod = map(train, ~mgcv::gam(y ~ s(x), data = .x)),
+         wiggly_mod = map(train, ~gam(y ~ s(x, k = 30), sp = 10e-6, data = .x))) %>% 
+  mutate(rmse_lin    = map2_dbl(lin_mod, test, ~rmse(model = .x, data = .y)), 
+         rmse_nonlin = map2_dbl(nonlin_mod, test, ~rmse(model = .x, data = .y)),
+         rmse_wiggly = map2_dbl(wiggly_mod, test, ~rmse(model = .x, data = .y)))
+# map2_dbl you get the number with`_dbl`
 ```
+
+summerize results
+
+```{r}
+cv_df %>% 
+  select(.id, starts_with("rmse")) %>% 
+  gather(key = model, value = rmse, rmse_lin:rmse_wiggly) %>% 
+  ggplot(aes(x = model, y = rmse)) + geom_violin()
+  
+```
+
 
