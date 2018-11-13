@@ -61,7 +61,7 @@ train_df %>%
 ```
 
 ```{r}
-# compute model quality for a given dataset - `root-mean-squared-error`
+# compute model quality for a given dataset - `root-mean-squared-error` (lower the better)
 rmse(lin_mod, test_df)
 rmse(nonlin_mod, test_df)
 rmse(wiggly_mod, test_df)
@@ -100,5 +100,70 @@ cv_df %>%
   ggplot(aes(x = model, y = rmse)) + geom_violin()
   
 ```
+
+Child grwoth example
+
+```{r}
+child_growth = read_csv("./data/nepalese_children.csv")
+```
+
+```{r}
+child_growth %>% 
+  ggplot(aes(x = weight, y = armc)) +
+  geom_point(alpha = .5)
+```
+
+Is it linear?? Let's prove
+
+```{r}
+child_growth =
+  child_growth %>% 
+  mutate(weight_sp = (weight > 7) * (weight - 7))
+```
+```{r}
+lin_mod = lm(armc ~ weight, data = child_growth)
+pwl_mod = lm(armc ~ weight + weight_sp, data = child_growth)
+nonlin_mod = gam(armc ~ s(weight), data = child_growth)
+```
+
+plot models
+
+```{r}
+child_growth %>% 
+  gather_predictions(lin_mod, pwl_mod, nonlin_mod) %>% 
+  mutate(model = fct_inorder(model)) %>% 
+  ggplot(aes(x = weight, y = armc)) + 
+  geom_point(alpha = .5) +
+  geom_line(aes(y = pred), color = "red") + 
+  facet_grid(~model)
+```
+
+```{r}
+cv_df =
+  crossv_mc(child_growth, 100) %>% 
+  mutate(train = map(train, as_tibble),
+         test = map(test, as_tibble))
+```
+
+```{r}
+cv_df = 
+  cv_df %>% 
+  mutate(lin_mod = map(train, ~lm(armc ~ weight, data = .x)),
+         pwl_mod = map(train, ~lm(armc ~ weight + weight_sp, data = .x)),
+         nonlin_mod = map(train, ~gam(armc ~ s(weight), data = as_tibble(.x)))) %>% 
+  mutate(rmse_lin    = map2_dbl(lin_mod, test, ~rmse(model = .x, data = .y)),
+         rmse_pwl = map2_dbl(pwl_mod, test, ~rmse(model = .x, data = .y)),
+         rmse_nonlin = map2_dbl(nonlin_mod, test, ~rmse(model = .x, data = .y)))
+```
+
+```{r}
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  gather(key = model, value = rmse) %>% 
+  mutate(model = str_replace(model, "rmse_", ""),
+         model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) + geom_violin()
+```
+
 
 
